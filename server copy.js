@@ -1,3 +1,5 @@
+// Contenido para DEV
+
 // server.js - Backend para la aplicación de comentarios en PDF
 const express = require('express');
 const multer = require('multer');

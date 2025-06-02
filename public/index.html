@@ -24,12 +24,132 @@
         }
         
         @keyframes spin {
-            from {
-                transform: rotate(0deg);
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Efectos de confeti */
+        .confetti {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        .confetti-piece {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #ff6b6b;
+            animation: confetti-fall 3s ease-out forwards;
+        }
+
+        @keyframes confetti-fall {
+            0% {
+                transform: translateY(-100vh) rotate(0deg);
+                opacity: 1;
             }
-            to {
-                transform: rotate(360deg);
+            100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
             }
+        }
+
+        /* Estilos para comentarios aprobados */
+        .comment-approved {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            border-left-color: #28a745 !important;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.15);
+        }
+
+        .comment-approved .approval-badge {
+            background: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        /* Estilos para respuestas */
+        .comment-reply {
+            margin-left: 20%;
+            border-left: 3px solid #e9ecef;
+            background: #f8f9fa;
+        }
+
+        /* Estilos para el editor de texto enriquecido */
+        .rich-text-toolbar {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #f9fafb;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .toolbar-button {
+            padding: 6px 10px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: #374151;
+            transition: all 0.2s;
+        }
+
+        .toolbar-button:hover {
+            background: #f3f4f6;
+            border-color: #9ca3af;
+        }
+
+        .toolbar-button.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        /* Estilos para contenido enriquecido */
+        .rich-content strong {
+            font-weight: bold;
+        }
+
+        .rich-content em {
+            font-style: italic;
+        }
+
+        .rich-content a {
+            color: #3b82f6;
+            text-decoration: underline;
+        }
+
+        .rich-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin: 8px 0;
+        }
+
+        .rich-content .youtube-embed {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            overflow: hidden;
+            margin: 8px 0;
+            border-radius: 8px;
+        }
+
+        .rich-content .youtube-embed iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }
     </style>
 </head>
@@ -70,6 +190,173 @@
             </svg>
         );
 
+        const ReplyIcon = ({ size = 16 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9,17 4,12 9,7"/>
+                <path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
+            </svg>
+        );
+
+        const CheckCircle = ({ size = 20 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22,4 12,14.01 9,11.01"/>
+            </svg>
+        );
+
+        // Funciones auxiliares para confeti
+        const createConfetti = () => {
+            const confettiContainer = document.createElement('div');
+            confettiContainer.className = 'confetti';
+            document.body.appendChild(confettiContainer);
+
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98fb98'];
+            
+            for (let i = 0; i < 50; i++) {
+                const confettiPiece = document.createElement('div');
+                confettiPiece.className = 'confetti-piece';
+                confettiPiece.style.left = Math.random() * 100 + '%';
+                confettiPiece.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confettiPiece.style.animationDelay = Math.random() * 3 + 's';
+                confettiPiece.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                confettiContainer.appendChild(confettiPiece);
+            }
+
+            setTimeout(() => {
+                document.body.removeChild(confettiContainer);
+            }, 5000);
+        };
+
+        // Función para procesar texto enriquecido
+        const processRichText = (text) => {
+            if (!text) return '';
+            
+            // Detectar URLs de YouTube y convertir a embed
+            const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/g;
+            text = text.replace(youtubeRegex, (match, videoId) => {
+                return `<div class="youtube-embed"><iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe></div>`;
+            });
+
+            // Detectar URLs de imágenes
+            const imageRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
+            text = text.replace(imageRegex, '<img src="$1" alt="Imagen" />');
+
+            // Detectar URLs de Google Drive (convertir a vista directa)
+            const driveRegex = /https:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/g;
+            text = text.replace(driveRegex, (match, fileId) => {
+                return `<img src="https://drive.google.com/uc?id=${fileId}" alt="Imagen de Google Drive" />`;
+            });
+
+            // Detectar enlaces generales
+            const linkRegex = /(https?:\/\/[^\s]+)/g;
+            text = text.replace(linkRegex, '<a href="$1" target="_blank">$1</a>');
+
+            return text;
+        };
+
+        // Componente para el editor de texto enriquecido
+        const RichTextEditor = ({ value, onChange, placeholder }) => {
+            const [showBold, setShowBold] = useState(false);
+            const [showItalic, setShowItalic] = useState(false);
+            const textareaRef = useRef(null);
+
+            const insertFormat = (startTag, endTag) => {
+                const textarea = textareaRef.current;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const selectedText = value.substring(start, end);
+                
+                if (selectedText) {
+                    const newText = value.substring(0, start) + startTag + selectedText + endTag + value.substring(end);
+                    onChange(newText);
+                } else {
+                    const newText = value.substring(0, start) + startTag + endTag + value.substring(end);
+                    onChange(newText);
+                    // Posicionar cursor entre las etiquetas
+                    setTimeout(() => {
+                        textarea.focus();
+                        textarea.setSelectionRange(start + startTag.length, start + startTag.length);
+                    }, 0);
+                }
+            };
+
+            const insertLink = () => {
+                const url = prompt('Introduce la URL:');
+                if (url) {
+                    const text = prompt('Texto del enlace (opcional):') || url;
+                    const textarea = textareaRef.current;
+                    const start = textarea.selectionStart;
+                    const linkText = `[${text}](${url})`;
+                    const newText = value.substring(0, start) + linkText + value.substring(start);
+                    onChange(newText);
+                }
+            };
+
+            return (
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                    <div className="rich-text-toolbar">
+                        <button 
+                            type="button"
+                            className="toolbar-button"
+                            onClick={() => insertFormat('**', '**')}
+                            title="Negrita"
+                        >
+                            <strong>B</strong>
+                        </button>
+                        <button 
+                            type="button"
+                            className="toolbar-button"
+                            onClick={() => insertFormat('*', '*')}
+                            title="Cursiva"
+                        >
+                            <em>I</em>
+                        </button>
+                        <button 
+                            type="button"
+                            className="toolbar-button"
+                            onClick={insertLink}
+                            title="Insertar enlace"
+                        >
+                            🔗
+                        </button>
+                        <div className="text-xs text-gray-500 flex items-center ml-2">
+                            URLs de imágenes y YouTube se detectan automáticamente
+                        </div>
+                    </div>
+                    <textarea
+                        ref={textareaRef}
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        placeholder={placeholder}
+                        className="w-full h-32 p-3 resize-none focus:outline-none"
+                        style={{ borderRadius: '0 0 8px 8px' }}
+                    />
+                </div>
+            );
+        };
+
+        // Componente para mostrar contenido enriquecido
+        const RichContent = ({ content }) => {
+            if (!content) return null;
+
+            let processedContent = content;
+
+            // Procesar markdown básico
+            processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            processedContent = processedContent.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            processedContent = processedContent.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+            // Procesar multimedia
+            processedContent = processRichText(processedContent);
+
+            return (
+                <div 
+                    className="rich-content"
+                    dangerouslySetInnerHTML={{ __html: processedContent }}
+                />
+            );
+        };
+
         // Componente principal
         const PDFCommentApp = () => {
             const [comments, setComments] = useState([]);
@@ -86,12 +373,16 @@
             const [error, setError] = useState(null);
             const [pdfDoc, setPdfDoc] = useState(null);
             const [pageNum, setPageNum] = useState(1);
-            const [scale, setScale] = useState(0.90); // Zoom por defecto 125%
+            const [scale, setScale] = useState(0.90);
             const [debugInfo, setDebugInfo] = useState('');
             const [renderFailed, setRenderFailed] = useState(false);
             const [totalPages, setTotalPages] = useState(0);
             const [isRendering, setIsRendering] = useState(false);
             const [renderedPages, setRenderedPages] = useState([]);
+            
+            // Estados para respuestas
+            const [replyingTo, setReplyingTo] = useState(null);
+            const [replyText, setReplyText] = useState('');
             
             const canvasContainerRef = useRef(null);
             const overlaysRef = useRef([]);
@@ -100,7 +391,7 @@
             const getProjectUUID = () => {
                 const path = window.location.pathname;
                 const parts = path.split('/');
-                return parts[parts.length - 1]; // El UUID es la última parte
+                return parts[parts.length - 1];
             };
 
             // Cargar PDF.js
@@ -134,7 +425,6 @@
                         return;
                     }
 
-                    // Cargar datos del proyecto
                     console.log('📡 Cargando datos del proyecto...');
                     setDebugInfo('Cargando datos del proyecto...');
                     const projectResponse = await fetch(`/api/projects/${uuid}`);
@@ -152,7 +442,6 @@
                     console.log('✅ Proyecto cargado:', projectData.project);
                     setDebugInfo('Proyecto cargado: ' + projectData.project.name);
 
-                    // Verificar si el PDF es accesible
                     console.log('🔍 Verificando acceso al PDF:', projectData.project.pdf_url);
                     setDebugInfo('Verificando PDF: ' + projectData.project.pdf_url);
                     const pdfTestResponse = await fetch(projectData.project.pdf_url, { method: 'HEAD' });
@@ -162,7 +451,6 @@
                         throw new Error(`PDF no accesible: ${pdfTestResponse.status}`);
                     }
 
-                    // Cargar PDF con configuración CORS
                     console.log('📖 Cargando PDF con PDF.js...');
                     setDebugInfo('Cargando PDF con PDF.js...');
                     const loadingTask = window.pdfjsLib.getDocument({
@@ -179,12 +467,7 @@
                     console.log('✅ PDF cargado exitosamente, páginas:', pdf.numPages);
                     setDebugInfo('PDF cargado: ' + pdf.numPages + ' páginas');
 
-                    // Cargar comentarios
                     await loadComments(uuid);
-                    
-                    // NO renderizar aquí - dejar que useEffect lo maneje
-                    // setDebugInfo('Renderizando página...');
-                    // await renderPage(pdf, 1);
                     
                     setLoading(false);
                     setDebugInfo('PDF cargado, esperando renderizado automático...');
@@ -235,14 +518,12 @@
                         throw new Error('Container no disponible después de varios intentos');
                     }
 
-                    // Limpiar contenedor
                     container.innerHTML = '';
                     overlaysRef.current = [];
                     setRenderedPages([]);
 
                     const pages = [];
                     
-                    // Renderizar cada página
                     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
                         console.log(`🎨 Renderizando página ${pageNumber}/${pdf.numPages}`);
                         setDebugInfo(`Renderizando página ${pageNumber}/${pdf.numPages}...`);
@@ -250,7 +531,6 @@
                         const page = await pdf.getPage(pageNumber);
                         const viewport = page.getViewport({ scale });
 
-                        // Crear contenedor para esta página
                         const pageContainer = document.createElement('div');
                         pageContainer.className = 'page-container relative mb-4 bg-white shadow-lg mx-auto';
                         pageContainer.style.cssText = `
@@ -264,7 +544,6 @@
                             margin-right: auto;
                         `;
 
-                        // Crear canvas para esta página
                         const canvas = document.createElement('canvas');
                         canvas.width = viewport.width;
                         canvas.height = viewport.height;
@@ -276,7 +555,6 @@
                             z-index: 1;
                         `;
 
-                        // Crear overlay para esta página (limpio, sin debug)
                         const overlay = document.createElement('div');
                         overlay.className = 'absolute top-0 left-0 cursor-crosshair';
                         overlay.style.cssText = `
@@ -290,12 +568,10 @@
                         `;
                         overlay.dataset.pageNumber = pageNumber;
 
-                        // Event listeners
                         overlay.addEventListener('mousedown', (e) => {
                             handleMouseDown(e, pageNumber);
                         });
 
-                        // Renderizar página en canvas
                         const context = canvas.getContext('2d');
                         const renderContext = {
                             canvasContext: context,
@@ -304,12 +580,10 @@
 
                         await page.render(renderContext).promise;
 
-                        // Ensamblar la página
                         pageContainer.appendChild(canvas);
                         pageContainer.appendChild(overlay);
                         container.appendChild(pageContainer);
 
-                        // Guardar referencias
                         pages.push({
                             pageNumber,
                             canvas,
@@ -329,7 +603,6 @@
 
                     console.log('🎉 Todas las páginas renderizadas exitosamente');
                     
-                    // Dibujar comentarios después de un breve delay
                     setTimeout(() => {
                         drawCommentRectangles();
                     }, 200);
@@ -349,14 +622,38 @@
                 }
             };
 
-            // Dibujar rectángulos de comentarios (actualizado para múltiples páginas)
+            // Organizar comentarios en estructura jerárquica
+            const organizeComments = (comments) => {
+                const organized = [];
+                const commentMap = {};
+                
+                // Crear mapa de comentarios
+                comments.forEach(comment => {
+                    commentMap[comment.id] = { ...comment, replies: [] };
+                });
+                
+                // Organizar en estructura padre-hijo
+                comments.forEach(comment => {
+                    if (comment.parent_id) {
+                        // Es una respuesta
+                        if (commentMap[comment.parent_id]) {
+                            commentMap[comment.parent_id].replies.push(commentMap[comment.id]);
+                        }
+                    } else {
+                        // Es un comentario principal
+                        organized.push(commentMap[comment.id]);
+                    }
+                });
+                
+                return organized;
+            };
+
+            // Dibujar rectángulos de comentarios
             const drawCommentRectangles = () => {
                 if (!overlaysRef.current.length) return;
 
-                // Limpiar todos los overlays
                 overlaysRef.current.forEach(overlay => {
                     if (overlay) {
-                        // Mantener solo los elementos que no son comentarios
                         const children = Array.from(overlay.children);
                         children.forEach(child => {
                             if (!child.classList.contains('drawing-rect')) {
@@ -366,15 +663,15 @@
                     }
                 });
 
-                // Agrupar comentarios por página
+                // Solo dibujar comentarios principales (sin parent_id)
+                const mainComments = comments.filter(comment => !comment.parent_id);
                 const commentsByPage = {};
-                comments.forEach((comment, index) => {
+                mainComments.forEach((comment, index) => {
                     const page = comment.page || 1;
                     if (!commentsByPage[page]) commentsByPage[page] = [];
                     commentsByPage[page].push({ ...comment, globalIndex: index });
                 });
 
-                // Dibujar comentarios en cada página
                 Object.keys(commentsByPage).forEach(pageStr => {
                     const pageNumber = parseInt(pageStr);
                     const pageComments = commentsByPage[pageNumber];
@@ -393,9 +690,8 @@
                         rect.style.height = comment.rect.height + 'px';
                         rect.style.borderColor = comment.color;
                         rect.style.backgroundColor = hoveredComment === comment.globalIndex ? comment.color + '20' : 'transparent';
-                        rect.style.pointerEvents = 'none'; // No interferir con la selección
+                        rect.style.pointerEvents = 'none';
 
-                        // Número del comentario
                         const number = document.createElement('div');
                         number.className = 'absolute -top-6 left-0 w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold';
                         number.style.backgroundColor = comment.color;
@@ -407,9 +703,7 @@
                     });
                 });
 
-                // Dibujar rectángulo siendo creado
                 if (isDrawing && currentRect && currentRect.overlay) {
-                    // Buscar si ya existe un rectángulo de dibujo
                     let drawingRect = currentRect.overlay.querySelector('.drawing-rect');
                     
                     if (!drawingRect) {
@@ -418,7 +712,6 @@
                         currentRect.overlay.appendChild(drawingRect);
                     }
 
-                    // Actualizar posición y tamaño
                     const left = Math.min(currentRect.startX, currentRect.startX + currentRect.width);
                     const top = Math.min(currentRect.startY, currentRect.startY + currentRect.height);
                     const width = Math.abs(currentRect.width);
@@ -441,7 +734,6 @@
                         renderAllPages(pdfDoc);
                     }, 500);
                     
-                    // Fallback adicional
                     setTimeout(() => {
                         if (renderFailed || debugInfo.includes('esperando')) {
                             console.log('🔄 Segundo intento automático de renderizado...');
@@ -451,14 +743,13 @@
                 }
             }, [pdfDoc, loading]);
 
-            // Redibujar cuando cambian los comentarios o hover
             useEffect(() => {
                 if (renderedPages.length > 0) {
                     drawCommentRectangles();
                 }
             }, [comments, hoveredComment, renderedPages]);
 
-            // Manejar selección de área (limpio)
+            // Manejar selección de área
             const handleMouseDown = (e, pageNumber) => {
                 if (isDrawing) return;
 
@@ -470,7 +761,6 @@
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
 
-                // Crear rectángulo de dibujo inmediatamente
                 const drawingRect = document.createElement('div');
                 drawingRect.className = 'drawing-rect-temp';
                 drawingRect.style.cssText = `
@@ -499,7 +789,6 @@
                     drawingElement: drawingRect
                 });
 
-                // Event listeners globales
                 const handleGlobalMouseMove = (e) => {
                     const rect = overlay.getBoundingClientRect();
                     const currentX = e.clientX - rect.left;
@@ -508,7 +797,6 @@
                     const newWidth = currentX - x;
                     const newHeight = currentY - y;
 
-                    // Actualizar rectángulo visual inmediatamente
                     const left = Math.min(x, currentX);
                     const top = Math.min(y, currentY);
                     const width = Math.abs(newWidth);
@@ -530,12 +818,9 @@
                     document.removeEventListener('mousemove', handleGlobalMouseMove);
                     document.removeEventListener('mouseup', handleGlobalMouseUp);
                     
-                    // Limpiar rectángulo temporal
                     drawingRect.remove();
-                    
                     setIsDrawing(false);
 
-                    // Usar el currentRect actual
                     setCurrentRect(current => {
                         if (!current) return null;
 
@@ -560,63 +845,38 @@
                 document.addEventListener('mouseup', handleGlobalMouseUp);
             };
 
-            // Función de test para crear overlays manualmente
-            const testOverlays = () => {
-                console.log('🧪 INICIANDO TEST DE OVERLAYS');
-                const container = canvasContainerRef.current;
-                if (!container) {
-                    console.log('❌ No se encontró el contenedor');
-                    return;
-                }
-
-                const pages = container.querySelectorAll('.page-container');
-                console.log('📄 Páginas encontradas:', pages.length);
-
-                pages.forEach((page, index) => {
-                    // Crear overlay de test
-                    const testOverlay = document.createElement('div');
-                    testOverlay.style.cssText = `
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
-                        background: rgba(0, 255, 0, 0.3);
-                        border: 3px solid green;
-                        z-index: 999;
-                        pointer-events: auto;
-                        cursor: crosshair;
-                    `;
-                    testOverlay.innerHTML = `<div style="padding: 10px; background: white; margin: 10px;">TEST OVERLAY ${index + 1}</div>`;
-                    
-                    testOverlay.addEventListener('click', () => {
-                        alert(`Test overlay ${index + 1} funciona!`);
-                    });
-
-                    page.appendChild(testOverlay);
-                    console.log('✅ Test overlay agregado a página', index + 1);
-                });
-            };
             const scrollToComment = (comment) => {
                 if (!comment.page || !renderedPages.length) return;
                 
                 const pageData = renderedPages.find(p => p.pageNumber === comment.page);
                 if (!pageData) return;
 
-                // Calcular la posición del comentario dentro de la página
                 const commentY = pageData.container.offsetTop + comment.rect.y;
                 const container = canvasContainerRef.current?.parentElement;
                 
                 if (container) {
-                    // Hacer scroll suave hacia el comentario
                     container.scrollTo({
-                        top: commentY - 100, // Offset para que se vea mejor
+                        top: commentY - 100,
                         behavior: 'smooth'
                     });
                 }
             };
-            const addComment = async () => {
-                if (!newComment.trim() || !pendingRect || !project) return;
+
+            const addComment = async (parentId = null) => {
+                const text = parentId ? replyText : newComment;
+                if (!text.trim()) return;
+
+                let rectToUse = pendingRect;
+                
+                // Si es una respuesta, usar el rectángulo del comentario padre
+                if (parentId) {
+                    const parentComment = comments.find(c => c.id === parentId);
+                    if (parentComment) {
+                        rectToUse = parentComment.rect;
+                    }
+                }
+
+                if (!rectToUse || !project) return;
 
                 try {
                     const colors = ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#F44336'];
@@ -627,10 +887,11 @@
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            text: newComment,
-                            rect: pendingRect,
+                            text: text,
+                            rect: rectToUse,
                             color: colors[comments.length % colors.length],
-                            page: pendingRect.page || 1
+                            page: rectToUse.page || 1,
+                            parent_id: parentId
                         })
                     });
 
@@ -638,15 +899,46 @@
                     
                     if (data.success) {
                         await loadComments(project.uuid);
-                        setNewComment('');
-                        setShowCommentDialog(false);
-                        setPendingRect(null);
+                        
+                        if (parentId) {
+                            setReplyText('');
+                            setReplyingTo(null);
+                        } else {
+                            setNewComment('');
+                            setShowCommentDialog(false);
+                            setPendingRect(null);
+                        }
                     } else {
                         setError(data.error);
                     }
                 } catch (err) {
                     console.error('Error agregando comentario:', err);
                     setError('Error al agregar comentario');
+                }
+            };
+
+            // Aprobar comentario con confeti
+            const approveComment = async (commentId) => {
+                try {
+                    const response = await fetch(`/api/comments/${commentId}/approve`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ approved: true })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        createConfetti();
+                        await loadComments(project.uuid);
+                    } else {
+                        setError(data.error);
+                    }
+                } catch (err) {
+                    console.error('Error aprobando comentario:', err);
+                    setError('Error al aprobar comentario');
                 }
             };
 
@@ -716,20 +1008,29 @@
 
             // Exportar comentarios
             const exportComments = () => {
+                const organizedComments = organizeComments(comments);
+                
                 const data = {
                     project: project.name,
                     totalPages: totalPages,
-                    comments: comments.map((c, index) => ({
+                    comments: organizedComments.map((c, index) => ({
                         numero: index + 1,
                         texto: c.text,
                         pagina: c.page || 1,
                         area: c.rect,
                         color: c.color,
-                        fecha: c.created_at
+                        aprobado: c.approved,
+                        fecha: c.created_at,
+                        respuestas: c.replies.map(r => ({
+                            texto: r.text,
+                            fecha: r.created_at,
+                            aprobado: r.approved
+                        }))
                     })),
                     exportDate: new Date().toISOString(),
                     summary: {
                         totalComments: comments.length,
+                        approvedComments: comments.filter(c => c.approved).length,
                         commentsByPage: {}
                     }
                 };
@@ -771,6 +1072,9 @@
                 );
             }
 
+            // Organizar comentarios para mostrar
+            const organizedComments = organizeComments(comments);
+
             return (
                 <div className="flex h-screen bg-gray-100">
                     {/* Panel Izquierdo - Visor PDF */}
@@ -807,9 +1111,7 @@
                             </div>
                         </div>
 
-                        {/* Área de visualización con scroll */}
                         <div className="flex-1 overflow-auto bg-gray-100 p-4">
-                            {/* Indicador de carga */}
                             {isRendering && (
                                 <div className="flex items-center justify-center py-8">
                                     <div className="flex items-center gap-3 text-blue-600">
@@ -819,16 +1121,13 @@
                                 </div>
                             )}
 
-                            {/* Contenedor de todas las páginas */}
                             <div 
                                 ref={canvasContainerRef}
                                 className="flex flex-col items-center gap-4 max-w-full"
                                 style={{ minHeight: isRendering ? '200px' : 'auto' }}
                             >
-                                {/* Las páginas se insertan aquí dinámicamente */}
                             </div>
 
-                            {/* Mensaje si el renderizado falla */}
                             {pdfDoc && renderFailed && !isRendering && (
                                 <div className="flex items-center justify-center py-12">
                                     <div className="text-center p-6 bg-yellow-50 border-2 border-yellow-300 border-dashed rounded-lg">
@@ -860,95 +1159,195 @@
                                 Comentarios del Cliente
                             </h2>
                             <p className="text-purple-100 text-sm">
-                                {comments.length} comentario{comments.length !== 1 ? 's' : ''}
+                                {comments.length} comentario{comments.length !== 1 ? 's' : ''} total
                             </p>
                         </div>
 
                         {/* Lista de Comentarios */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                            {comments.length === 0 ? (
+                            {organizedComments.length === 0 ? (
                                 <div className="text-center text-gray-500 mt-8">
                                     <MessageCircle size={48} className="mx-auto mb-4 text-gray-300" />
                                     <p>No hay comentarios aún</p>
                                     <p className="text-sm">Selecciona un área en el PDF para agregar uno</p>
                                 </div>
                             ) : (
-                                comments.map((comment, index) => (
-                                    <div
-                                        key={comment.id}
-                                        className={`bg-white rounded-lg p-3 shadow-sm border-l-4 transition-all duration-200 cursor-pointer ${
-                                            hoveredComment === index ? 'shadow-md scale-105' : ''
-                                        }`}
-                                        style={{ borderLeftColor: comment.color }}
-                                        onMouseEnter={() => setHoveredComment(index)}
-                                        onMouseLeave={() => setHoveredComment(null)}
-                                        onClick={() => scrollToComment(comment)}
-                                    >
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <span 
-                                                    className="inline-block w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold"
-                                                    style={{ backgroundColor: comment.color }}
-                                                >
-                                                    {index + 1}
-                                                </span>
-                                                {comment.page && totalPages > 1 && (
-                                                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                                                        Pág. {comment.page}
-                                                        <span className="ml-1 text-blue-600">👆 Clic para ir</span>
+                                organizedComments.map((comment, index) => (
+                                    <div key={comment.id}>
+                                        {/* Comentario principal */}
+                                        <div
+                                            className={`bg-white rounded-lg p-3 shadow-sm border-l-4 transition-all duration-200 cursor-pointer ${
+                                                comment.approved ? 'comment-approved' : ''
+                                            } ${
+                                                hoveredComment === index ? 'shadow-md scale-105' : ''
+                                            }`}
+                                            style={{ borderLeftColor: comment.color }}
+                                            onMouseEnter={() => setHoveredComment(index)}
+                                            onMouseLeave={() => setHoveredComment(null)}
+                                            onClick={() => scrollToComment(comment)}
+                                        >
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span 
+                                                        className="inline-block w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold"
+                                                        style={{ backgroundColor: comment.color }}
+                                                    >
+                                                        {index + 1}
                                                     </span>
+                                                    {comment.page && totalPages > 1 && (
+                                                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                                            Pág. {comment.page}
+                                                            <span className="ml-1 text-blue-600">👆 Clic para ir</span>
+                                                        </span>
+                                                    )}
+                                                    {comment.approved && (
+                                                        <span className="approval-badge">✓ Aprobado</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setReplyingTo(comment.id);
+                                                        }}
+                                                        className="text-blue-500 hover:text-blue-700 transition-colors"
+                                                        title="Responder"
+                                                    >
+                                                        <ReplyIcon size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            startEditComment(index);
+                                                        }}
+                                                        className="text-blue-500 hover:text-blue-700 transition-colors"
+                                                    >
+                                                        <Edit3 size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            deleteComment(index);
+                                                        }}
+                                                        className="text-red-500 hover:text-red-700 transition-colors"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            
+                                            {editingComment === index ? (
+                                                <div className="space-y-2">
+                                                    <RichTextEditor
+                                                        value={editCommentText}
+                                                        onChange={setEditCommentText}
+                                                        placeholder="Editar comentario..."
+                                                    />
+                                                    <div className="flex gap-2 justify-end">
+                                                        <button
+                                                            onClick={cancelEditComment}
+                                                            className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800 transition-colors"
+                                                        >
+                                                            Cancelar
+                                                        </button>
+                                                        <button
+                                                            onClick={saveEditComment}
+                                                            disabled={!editCommentText.trim()}
+                                                            className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                        >
+                                                            Guardar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="text-gray-800 mb-2">
+                                                        <RichContent content={comment.text} />
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mb-2">{comment.timestamp}</div>
+                                                    
+                                                    {/* Botón de Aprobado */}
+                                                    {!comment.approved && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                approveComment(comment.id);
+                                                            }}
+                                                            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded font-medium transition-colors flex items-center justify-center gap-2"
+                                                        >
+                                                            <CheckCircle size={16} />
+                                                            Aprobado
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Respuestas */}
+                                        {comment.replies && comment.replies.map((reply, replyIndex) => (
+                                            <div 
+                                                key={reply.id}
+                                                className={`comment-reply bg-gray-50 rounded-lg p-3 shadow-sm transition-all duration-200 ${
+                                                    reply.approved ? 'comment-approved' : ''
+                                                }`}
+                                            >
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded">
+                                                            Respuesta
+                                                        </span>
+                                                        {reply.approved && (
+                                                            <span className="approval-badge">✓ Aprobado</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="text-gray-800 mb-2">
+                                                    <RichContent content={reply.text} />
+                                                </div>
+                                                <div className="text-xs text-gray-500 mb-2">{reply.timestamp}</div>
+                                                
+                                                {!reply.approved && (
+                                                    <button
+                                                        onClick={() => approveComment(reply.id)}
+                                                        className="w-full bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded font-medium transition-colors flex items-center justify-center gap-2 text-sm"
+                                                    >
+                                                        <CheckCircle size={14} />
+                                                        Aprobado
+                                                    </button>
                                                 )}
                                             </div>
-                                            <div className="flex gap-1">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        startEditComment(index);
-                                                    }}
-                                                    className="text-blue-500 hover:text-blue-700 transition-colors"
-                                                >
-                                                    <Edit3 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        deleteComment(index);
-                                                    }}
-                                                    className="text-red-500 hover:text-red-700 transition-colors"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {editingComment === index ? (
-                                            <div className="space-y-2">
-                                                <textarea
-                                                    value={editCommentText}
-                                                    onChange={(e) => setEditCommentText(e.target.value)}
-                                                    className="w-full h-20 p-2 border border-gray-300 rounded text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    autoFocus
+                                        ))}
+
+                                        {/* Formulario de respuesta */}
+                                        {replyingTo === comment.id && (
+                                            <div className="comment-reply bg-blue-50 rounded-lg p-3">
+                                                <div className="mb-2">
+                                                    <span className="text-xs text-blue-600 font-medium">Responder a comentario:</span>
+                                                </div>
+                                                <RichTextEditor
+                                                    value={replyText}
+                                                    onChange={setReplyText}
+                                                    placeholder="Escribe tu respuesta..."
                                                 />
-                                                <div className="flex gap-2 justify-end">
+                                                <div className="flex gap-2 mt-2 justify-end">
                                                     <button
-                                                        onClick={cancelEditComment}
+                                                        onClick={() => {
+                                                            setReplyingTo(null);
+                                                            setReplyText('');
+                                                        }}
                                                         className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800 transition-colors"
                                                     >
                                                         Cancelar
                                                     </button>
                                                     <button
-                                                        onClick={saveEditComment}
-                                                        disabled={!editCommentText.trim()}
+                                                        onClick={() => addComment(comment.id)}
+                                                        disabled={!replyText.trim()}
                                                         className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                     >
-                                                        Guardar
+                                                        Responder
                                                     </button>
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <>
-                                                <p className="text-gray-800 mb-2">{comment.text}</p>
-                                                <div className="text-xs text-gray-500">{comment.timestamp}</div>
-                                            </>
                                         )}
                                     </div>
                                 ))
@@ -968,13 +1367,23 @@
                                         </span>
                                     )}
                                 </div>
-                                <textarea
+                                
+                                <div className="mb-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+                                    <p className="font-medium mb-1">💡 Puedes usar:</p>
+                                    <ul className="text-xs space-y-1">
+                                        <li>• URLs de imágenes (se mostrarán automáticamente)</li>
+                                        <li>• URLs de Google Drive (convertidas a vista directa)</li>
+                                        <li>• URLs de YouTube (se convertirán en videos)</li>
+                                        <li>• Usa los botones de formato para texto enriquecido</li>
+                                    </ul>
+                                </div>
+
+                                <RichTextEditor
                                     value={newComment}
-                                    onChange={(e) => setNewComment(e.target.value)}
+                                    onChange={setNewComment}
                                     placeholder="Escribe tu comentario aquí..."
-                                    className="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                    autoFocus
                                 />
+                                
                                 <div className="flex justify-end gap-3 mt-4">
                                     <button
                                         onClick={() => {
@@ -987,7 +1396,7 @@
                                         Cancelar
                                     </button>
                                     <button
-                                        onClick={addComment}
+                                        onClick={() => addComment()}
                                         disabled={!newComment.trim()}
                                         className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >

@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  pdf-comments-app:
+    build: .
+    container_name: pdf-comments-app
+    ports:
+      - "3001:3001"
+    volumes:
+      # Persistir la base de datos
+      - ./database.db:/usr/src/app/database.db
+      # Persistir los archivos PDF subidos
+      - ./uploads:/usr/src/app/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.js", "--docker"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # Opcional: Servicio de backup automático
+  backup:
+    image: alpine:latest
+    container_name: pdf-comments-backup
+    volumes:
+      - ./database.db:/data/database.db:ro
+      - ./uploads:/data/uploads:ro
+      - ./backups:/backups
+    command: >
+      sh -c "
+        apk add --no-cache tar gzip &&
+        while true; do
+          echo 'Creando backup...' &&
+          tar -czf /backups/backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data . &&
+          echo 'Backup creado' &&
+          find /backups -name 'backup-*.tar.gz' -mtime +7 -delete &&
+          sleep 86400
+        done
+      "
+    restart: unless-stopped
+    depends_on:
+      - pdf-comments-app
+
+networks:
+  default:
+    name: pdf-comments-network

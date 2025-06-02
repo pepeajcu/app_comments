@@ -1,0 +1,37 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.nyc_output
+coverage
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Archivos de desarrollo
+*.log
+logs
+
+# Archivos temporales
+tmp
+temp
+
+# Archivos de backup
+*.bak
+*.backup
+
+# Documentación
+docs/
+*.md
+
+# Archivos de configuración local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

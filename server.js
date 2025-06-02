@@ -84,22 +84,31 @@ db.serialize(() => {
     )
   `);
 
-  // Tabla de comentarios
+  // Tabla de comentarios (actualizada con nuevos campos)
   db.run(`
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id INTEGER NOT NULL,
+      parent_id INTEGER DEFAULT NULL,
       text TEXT NOT NULL,
       rect_x INTEGER NOT NULL,
       rect_y INTEGER NOT NULL,
       rect_width INTEGER NOT NULL,
       rect_height INTEGER NOT NULL,
       color TEXT NOT NULL,
+      approved BOOLEAN DEFAULT FALSE,
+      page INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+      FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES comments (id) ON DELETE CASCADE
     )
   `);
+
+  // Migrar tabla existente si es necesaria (agregar columnas nuevas)
+  db.run(`ALTER TABLE comments ADD COLUMN parent_id INTEGER DEFAULT NULL`, () => {});
+  db.run(`ALTER TABLE comments ADD COLUMN approved BOOLEAN DEFAULT FALSE`, () => {});
+  db.run(`ALTER TABLE comments ADD COLUMN page INTEGER DEFAULT 1`, () => {});
 });
 
 // RUTAS DE LA API
@@ -180,7 +189,7 @@ app.get('/api/projects/:uuid', (req, res) => {
   );
 });
 
-// 3. Obtener comentarios de un proyecto
+// 3. Obtener comentarios de un proyecto (actualizado para soportar respuestas)
 app.get('/api/projects/:uuid/comments', (req, res) => {
   const { uuid } = req.params;
 
@@ -198,7 +207,7 @@ app.get('/api/projects/:uuid/comments', (req, res) => {
         return res.status(404).json({ error: 'Proyecto no encontrado' });
       }
 
-      // Obtener comentarios
+      // Obtener comentarios con estructura jerárquica
       db.all(
         'SELECT * FROM comments WHERE project_id = ? ORDER BY created_at ASC',
         [project.id],
@@ -218,6 +227,9 @@ app.get('/api/projects/:uuid/comments', (req, res) => {
               height: comment.rect_height
             },
             color: comment.color,
+            approved: comment.approved || false,
+            page: comment.page || 1,
+            parent_id: comment.parent_id,
             timestamp: new Date(comment.created_at).toLocaleTimeString(),
             created_at: comment.created_at
           }));
@@ -232,73 +244,107 @@ app.get('/api/projects/:uuid/comments', (req, res) => {
   );
 });
 
-// 4. Agregar comentario a un proyecto
+// 4. Agregar comentario a un proyecto (actualizado)
 app.post('/api/projects/:uuid/comments', (req, res) => {
   const { uuid } = req.params;
-  const { text, rect, color } = req.body;
+  const { text, rect, color, page, parent_id } = req.body;
 
-  if (!text || !rect || !color) {
+  if (!text || (!rect && !parent_id) || !color) {
     return res.status(400).json({ 
-      error: 'Texto, rectángulo y color son requeridos' 
+      error: 'Texto y color son requeridos. Rectángulo es requerido para comentarios principales.' 
     });
   }
 
-  // Validar estructura del rectángulo
-  if (!rect.x || !rect.y || !rect.width || !rect.height) {
-    return res.status(400).json({ 
-      error: 'Rectángulo debe tener x, y, width y height' 
-    });
+  // Para respuestas, usar el rectángulo del comentario padre si no se proporciona
+  let finalRect = rect;
+  if (parent_id && !rect) {
+    // Obtener rectángulo del comentario padre
+    db.get(
+      'SELECT rect_x, rect_y, rect_width, rect_height FROM comments WHERE id = ?',
+      [parent_id],
+      (err, parentComment) => {
+        if (err || !parentComment) {
+          return res.status(400).json({ error: 'Comentario padre no encontrado' });
+        }
+        
+        finalRect = {
+          x: parentComment.rect_x,
+          y: parentComment.rect_y,
+          width: parentComment.rect_width,
+          height: parentComment.rect_height
+        };
+        
+        proceedWithCommentCreation();
+      }
+    );
+    return;
   }
 
-  // Obtener ID del proyecto
-  db.get(
-    'SELECT id FROM projects WHERE uuid = ?',
-    [uuid],
-    (err, project) => {
-      if (err) {
-        console.error('Error al obtener proyecto:', err);
-        return res.status(500).json({ error: 'Error interno del servidor' });
-      }
+  proceedWithCommentCreation();
 
-      if (!project) {
-        return res.status(404).json({ error: 'Proyecto no encontrado' });
-      }
+  function proceedWithCommentCreation() {
+    // Validar estructura del rectángulo
+    if (!finalRect || !finalRect.x || !finalRect.y || !finalRect.width || !finalRect.height) {
+      return res.status(400).json({ 
+        error: 'Rectángulo debe tener x, y, width y height' 
+      });
+    }
 
-      // Insertar comentario
-      const stmt = db.prepare(`
-        INSERT INTO comments (project_id, text, rect_x, rect_y, rect_width, rect_height, color)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      stmt.run([
-        project.id,
-        text,
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-        color
-      ], function(err) {
+    // Obtener ID del proyecto
+    db.get(
+      'SELECT id FROM projects WHERE uuid = ?',
+      [uuid],
+      (err, project) => {
         if (err) {
-          console.error('Error al agregar comentario:', err);
+          console.error('Error al obtener proyecto:', err);
           return res.status(500).json({ error: 'Error interno del servidor' });
         }
 
-        res.json({
-          success: true,
-          comment: {
-            id: this.lastID,
-            text,
-            rect,
-            color,
-            timestamp: new Date().toLocaleTimeString()
-          }
-        });
-      });
+        if (!project) {
+          return res.status(404).json({ error: 'Proyecto no encontrado' });
+        }
 
-      stmt.finalize();
-    }
-  );
+        // Insertar comentario
+        const stmt = db.prepare(`
+          INSERT INTO comments (project_id, parent_id, text, rect_x, rect_y, rect_width, rect_height, color, page)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        stmt.run([
+          project.id,
+          parent_id || null,
+          text,
+          finalRect.x,
+          finalRect.y,
+          finalRect.width,
+          finalRect.height,
+          color,
+          page || 1
+        ], function(err) {
+          if (err) {
+            console.error('Error al agregar comentario:', err);
+            return res.status(500).json({ error: 'Error interno del servidor' });
+          }
+
+          res.json({
+            success: true,
+            comment: {
+              id: this.lastID,
+              text,
+              rect: finalRect,
+              color,
+              approved: false,
+              page: page || 1,
+              parent_id: parent_id || null,
+              timestamp: new Date().toLocaleTimeString()
+            }
+          });
+        });
+
+        stmt.finalize();
+      }
+    );
+  }
 });
 
 // 5. Actualizar comentario
@@ -333,7 +379,35 @@ app.put('/api/comments/:commentId', (req, res) => {
   stmt.finalize();
 });
 
-// 6. Eliminar comentario
+// 6. Aprobar/desaprobar comentario (nueva ruta)
+app.put('/api/comments/:commentId/approve', (req, res) => {
+  const { commentId } = req.params;
+  const { approved } = req.body;
+
+  const stmt = db.prepare(
+    'UPDATE comments SET approved = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  );
+
+  stmt.run([approved ? 1 : 0, commentId], function(err) {
+    if (err) {
+      console.error('Error al aprobar comentario:', err);
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Comentario no encontrado' });
+    }
+
+    res.json({
+      success: true,
+      message: approved ? 'Comentario aprobado' : 'Aprobación removida'
+    });
+  });
+
+  stmt.finalize();
+});
+
+// 7. Eliminar comentario
 app.delete('/api/comments/:commentId', (req, res) => {
   const { commentId } = req.params;
 
@@ -358,38 +432,41 @@ app.delete('/api/comments/:commentId', (req, res) => {
   stmt.finalize();
 });
 
-// 7. Listar todos los proyectos (para administración)
+// 8. Listar todos los proyectos con contador de comentarios (actualizado)
 app.get('/api/projects', (req, res) => {
-  db.all(
-    'SELECT * FROM projects ORDER BY created_at DESC',
-    [],
-    (err, projects) => {
-      if (err) {
-        console.error('Error al obtener proyectos:', err);
-        return res.status(500).json({ error: 'Error interno del servidor' });
-      }
-
-      const formattedProjects = projects.map(project => ({
-        id: project.id,
-        name: project.name,
-        uuid: project.uuid,
-        url: `/${project.name}/${project.uuid}`,
-        pdf_url: `/uploads/${project.pdf_filename}`,
-        pdf_original_name: project.pdf_original_name,
-        created_at: project.created_at
-      }));
-
-      res.json({
-        success: true,
-        projects: formattedProjects
-      });
+  db.all(`
+    SELECT 
+      p.*,
+      COUNT(c.id) as comment_count
+    FROM projects p
+    LEFT JOIN comments c ON p.id = c.project_id
+    GROUP BY p.id
+    ORDER BY p.created_at DESC
+  `, [], (err, projects) => {
+    if (err) {
+      console.error('Error al obtener proyectos:', err);
+      return res.status(500).json({ error: 'Error interno del servidor' });
     }
-  );
+
+    const formattedProjects = projects.map(project => ({
+      id: project.id,
+      name: project.name,
+      uuid: project.uuid,
+      url: `/${project.name}/${project.uuid}`,
+      pdf_url: `/uploads/${project.pdf_filename}`,
+      pdf_original_name: project.pdf_original_name,
+      created_at: project.created_at,
+      comment_count: project.comment_count || 0
+    }));
+
+    res.json({
+      success: true,
+      projects: formattedProjects
+    });
+  });
 });
 
-// Agregar estas rutas ANTES de la ruta app.get('/:projectName/:uuid')
-
-// 9. Ruta para eliminar proyecto (agregada)
+// 9. Ruta para eliminar proyecto
 app.delete('/api/projects/:uuid', (req, res) => {
   const { uuid } = req.params;
 
@@ -448,7 +525,7 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// 8. Ruta para servir la aplicación React en las URLs de proyecto
+// 11. Ruta para servir la aplicación React en las URLs de proyecto
 app.get('/:projectName/:uuid', (req, res) => {
   const { uuid } = req.params;
   
@@ -482,6 +559,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
   console.log(`📁 Base de datos: ./database.db`);
   console.log(`📂 Archivos PDF: ./uploads/`);
+  console.log(`🔧 Panel de administración: http://localhost:${PORT}/admin`);
 });
 
 // Manejar cierre graceful

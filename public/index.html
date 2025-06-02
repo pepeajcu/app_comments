@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comentarios en PDF</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+        
+        // Iconos usando SVG inline
+        const MessageCircle = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/>
+            </svg>
+        );
+        
+        const Download = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+        );
+        
+        const Edit3 = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+        );
+        
+        const Trash2 = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3,6 5,6 21,6"/>
+                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+        );
+
+        // Componente principal
+        const PDFCommentApp = () => {
+            const [comments, setComments] = useState([]);
+            const [isDrawing, setIsDrawing] = useState(false);
+            const [currentRect, setCurrentRect] = useState(null);
+            const [hoveredComment, setHoveredComment] = useState(null);
+            const [newComment, setNewComment] = useState('');
+            const [showCommentDialog, setShowCommentDialog] = useState(false);
+            const [pendingRect, setPendingRect] = useState(null);
+            const [editingComment, setEditingComment] = useState(null);
+            const [editCommentText, setEditCommentText] = useState('');
+            const [project, setProject] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [pdfDoc, setPdfDoc] = useState(null);
+            const [pageNum, setPageNum] = useState(1);
+            const [scale, setScale] = useState(0.90); // Zoom por defecto 125%
+            const [debugInfo, setDebugInfo] = useState('');
+            const [renderFailed, setRenderFailed] = useState(false);
+            const [totalPages, setTotalPages] = useState(0);
+            const [isRendering, setIsRendering] = useState(false);
+            const [renderedPages, setRenderedPages] = useState([]);
+            
+            const canvasContainerRef = useRef(null);
+            const overlaysRef = useRef([]);
+
+            // Obtener UUID del proyecto de la URL
+            const getProjectUUID = () => {
+                const path = window.location.pathname;
+                const parts = path.split('/');
+                return parts[parts.length - 1]; // El UUID es la última parte
+            };
+
+            // Cargar PDF.js
+            useEffect(() => {
+                console.log('🔄 Cargando PDF.js...');
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                script.onload = () => {
+                    console.log('✅ PDF.js cargado exitosamente');
+                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    loadProject();
+                };
+                script.onerror = () => {
+                    console.error('❌ Error cargando PDF.js');
+                    setError('Error cargando PDF.js');
+                    setLoading(false);
+                };
+                document.head.appendChild(script);
+            }, []);
+
+            // Cargar proyecto y PDF
+            const loadProject = async () => {
+                try {
+                    const uuid = getProjectUUID();
+                    console.log('🔍 UUID obtenido:', uuid);
+                    setDebugInfo('Obteniendo UUID: ' + uuid);
+                    
+                    if (!uuid) {
+                        setError('UUID del proyecto no válido');
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Cargar datos del proyecto
+                    console.log('📡 Cargando datos del proyecto...');
+                    setDebugInfo('Cargando datos del proyecto...');
+                    const projectResponse = await fetch(`/api/projects/${uuid}`);
+                    const projectData = await projectResponse.json();
+                    
+                    console.log('📋 Respuesta del proyecto:', projectData);
+
+                    if (!projectData.success) {
+                        setError(projectData.error);
+                        setLoading(false);
+                        return;
+                    }
+
+                    setProject(projectData.project);
+                    console.log('✅ Proyecto cargado:', projectData.project);
+                    setDebugInfo('Proyecto cargado: ' + projectData.project.name);
+
+                    // Verificar si el PDF es accesible
+                    console.log('🔍 Verificando acceso al PDF:', projectData.project.pdf_url);
+                    setDebugInfo('Verificando PDF: ' + projectData.project.pdf_url);
+                    const pdfTestResponse = await fetch(projectData.project.pdf_url, { method: 'HEAD' });
+                    console.log('📄 Estado del PDF:', pdfTestResponse.status);
+
+                    if (!pdfTestResponse.ok) {
+                        throw new Error(`PDF no accesible: ${pdfTestResponse.status}`);
+                    }
+
+                    // Cargar PDF con configuración CORS
+                    console.log('📖 Cargando PDF con PDF.js...');
+                    setDebugInfo('Cargando PDF con PDF.js...');
+                    const loadingTask = window.pdfjsLib.getDocument({
+                        url: projectData.project.pdf_url,
+                        withCredentials: false,
+                        isEvalSupported: false,
+                        disableAutoFetch: false,
+                        disableStream: false
+                    });
+                    
+                    const pdf = await loadingTask.promise;
+                    setPdfDoc(pdf);
+                    setTotalPages(pdf.numPages);
+                    console.log('✅ PDF cargado exitosamente, páginas:', pdf.numPages);
+                    setDebugInfo('PDF cargado: ' + pdf.numPages + ' páginas');
+
+                    // Cargar comentarios
+                    await loadComments(uuid);
+                    
+                    // NO renderizar aquí - dejar que useEffect lo maneje
+                    // setDebugInfo('Renderizando página...');
+                    // await renderPage(pdf, 1);
+                    
+                    setLoading(false);
+                    setDebugInfo('PDF cargado, esperando renderizado automático...');
+                    console.log('🎉 PDF cargado, esperando renderizado automático');
+                } catch (err) {
+                    console.error('❌ Error cargando proyecto:', err);
+                    setError('Error al cargar el proyecto: ' + err.message);
+                    setDebugInfo('❌ Error: ' + err.message);
+                    setLoading(false);
+                }
+            };
+
+            // Cargar comentarios del proyecto
+            const loadComments = async (uuid) => {
+                try {
+                    const response = await fetch(`/api/projects/${uuid}/comments`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        setComments(data.comments);
+                    }
+                } catch (err) {
+                    console.error('Error cargando comentarios:', err);
+                }
+            };
+
+            // Renderizar todas las páginas del PDF
+            const renderAllPages = async (pdf, retryCount = 0) => {
+                try {
+                    if (isRendering) {
+                        console.log('⏳ Ya hay un renderizado en progreso, esperando...');
+                        return;
+                    }
+
+                    setIsRendering(true);
+                    console.log('🎨 Renderizando todas las páginas del PDF...');
+                    setDebugInfo('Renderizando todas las páginas...');
+
+                    const container = canvasContainerRef.current;
+                    if (!container) {
+                        console.error('❌ Container ref no encontrado');
+                        if (retryCount < 3) {
+                            setIsRendering(false);
+                            setTimeout(() => renderAllPages(pdf, retryCount + 1), 500);
+                            return;
+                        }
+                        setIsRendering(false);
+                        throw new Error('Container no disponible después de varios intentos');
+                    }
+
+                    // Limpiar contenedor
+                    container.innerHTML = '';
+                    overlaysRef.current = [];
+                    setRenderedPages([]);
+
+                    const pages = [];
+                    
+                    // Renderizar cada página
+                    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+                        console.log(`🎨 Renderizando página ${pageNumber}/${pdf.numPages}`);
+                        setDebugInfo(`Renderizando página ${pageNumber}/${pdf.numPages}...`);
+
+                        const page = await pdf.getPage(pageNumber);
+                        const viewport = page.getViewport({ scale });
+
+                        // Crear contenedor para esta página
+                        const pageContainer = document.createElement('div');
+                        pageContainer.className = 'page-container relative mb-4 bg-white shadow-lg mx-auto';
+                        pageContainer.style.cssText = `
+                            position: relative;
+                            width: ${viewport.width}px;
+                            height: ${viewport.height}px;
+                            margin-bottom: 16px;
+                            background: white;
+                            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                            margin-left: auto;
+                            margin-right: auto;
+                        `;
+
+                        // Crear canvas para esta página
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        canvas.style.cssText = `
+                            display: block;
+                            width: ${viewport.width}px;
+                            height: ${viewport.height}px;
+                            position: relative;
+                            z-index: 1;
+                        `;
+
+                        // Crear overlay para esta página (limpio, sin debug)
+                        const overlay = document.createElement('div');
+                        overlay.className = 'absolute top-0 left-0 cursor-crosshair';
+                        overlay.style.cssText = `
+                            position: absolute;
+                            top: 0;
+                            left: 0;
+                            width: ${viewport.width}px;
+                            height: ${viewport.height}px;
+                            pointer-events: auto;
+                            z-index: 10;
+                        `;
+                        overlay.dataset.pageNumber = pageNumber;
+
+                        // Event listeners
+                        overlay.addEventListener('mousedown', (e) => {
+                            handleMouseDown(e, pageNumber);
+                        });
+
+                        // Renderizar página en canvas
+                        const context = canvas.getContext('2d');
+                        const renderContext = {
+                            canvasContext: context,
+                            viewport: viewport
+                        };
+
+                        await page.render(renderContext).promise;
+
+                        // Ensamblar la página
+                        pageContainer.appendChild(canvas);
+                        pageContainer.appendChild(overlay);
+                        container.appendChild(pageContainer);
+
+                        // Guardar referencias
+                        pages.push({
+                            pageNumber,
+                            canvas,
+                            overlay,
+                            container: pageContainer,
+                            viewport
+                        });
+                        overlaysRef.current[pageNumber - 1] = overlay;
+
+                        console.log(`✅ Página ${pageNumber} renderizada`);
+                    }
+
+                    setRenderedPages(pages);
+                    setRenderFailed(false);
+                    setDebugInfo(`PDF renderizado correctamente`);
+                    setIsRendering(false);
+
+                    console.log('🎉 Todas las páginas renderizadas exitosamente');
+                    
+                    // Dibujar comentarios después de un breve delay
+                    setTimeout(() => {
+                        drawCommentRectangles();
+                    }, 200);
+
+                } catch (err) {
+                    console.error('❌ Error renderizando páginas:', err);
+                    setDebugInfo('❌ Error en renderizado: ' + err.message);
+                    setIsRendering(false);
+                    
+                    if (retryCount < 2) {
+                        console.log('🔄 Reintentando renderizado en 1 segundo...');
+                        setTimeout(() => renderAllPages(pdf, retryCount + 1), 1000);
+                    } else {
+                        setError('Error al renderizar el PDF: ' + err.message);
+                        setRenderFailed(true);
+                    }
+                }
+            };
+
+            // Dibujar rectángulos de comentarios (actualizado para múltiples páginas)
+            const drawCommentRectangles = () => {
+                if (!overlaysRef.current.length) return;
+
+                // Limpiar todos los overlays
+                overlaysRef.current.forEach(overlay => {
+                    if (overlay) {
+                        // Mantener solo los elementos que no son comentarios
+                        const children = Array.from(overlay.children);
+                        children.forEach(child => {
+                            if (!child.classList.contains('drawing-rect')) {
+                                overlay.removeChild(child);
+                            }
+                        });
+                    }
+                });
+
+                // Agrupar comentarios por página
+                const commentsByPage = {};
+                comments.forEach((comment, index) => {
+                    const page = comment.page || 1;
+                    if (!commentsByPage[page]) commentsByPage[page] = [];
+                    commentsByPage[page].push({ ...comment, globalIndex: index });
+                });
+
+                // Dibujar comentarios en cada página
+                Object.keys(commentsByPage).forEach(pageStr => {
+                    const pageNumber = parseInt(pageStr);
+                    const pageComments = commentsByPage[pageNumber];
+                    const overlay = overlaysRef.current[pageNumber - 1];
+                    
+                    if (!overlay) return;
+
+                    pageComments.forEach(comment => {
+                        const rect = document.createElement('div');
+                        rect.className = `absolute border-2 cursor-pointer transition-all duration-200 comment-rect ${
+                            hoveredComment === comment.globalIndex ? 'border-red-500 border-4 z-20' : 'border-blue-500'
+                        }`;
+                        rect.style.left = comment.rect.x + 'px';
+                        rect.style.top = comment.rect.y + 'px';
+                        rect.style.width = comment.rect.width + 'px';
+                        rect.style.height = comment.rect.height + 'px';
+                        rect.style.borderColor = comment.color;
+                        rect.style.backgroundColor = hoveredComment === comment.globalIndex ? comment.color + '20' : 'transparent';
+                        rect.style.pointerEvents = 'none'; // No interferir con la selección
+
+                        // Número del comentario
+                        const number = document.createElement('div');
+                        number.className = 'absolute -top-6 left-0 w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold';
+                        number.style.backgroundColor = comment.color;
+                        number.style.pointerEvents = 'none';
+                        number.textContent = comment.globalIndex + 1;
+                        
+                        rect.appendChild(number);
+                        overlay.appendChild(rect);
+                    });
+                });
+
+                // Dibujar rectángulo siendo creado
+                if (isDrawing && currentRect && currentRect.overlay) {
+                    // Buscar si ya existe un rectángulo de dibujo
+                    let drawingRect = currentRect.overlay.querySelector('.drawing-rect');
+                    
+                    if (!drawingRect) {
+                        drawingRect = document.createElement('div');
+                        drawingRect.className = 'drawing-rect absolute border-2 border-blue-500 border-dashed pointer-events-none bg-blue-100 bg-opacity-20';
+                        currentRect.overlay.appendChild(drawingRect);
+                    }
+
+                    // Actualizar posición y tamaño
+                    const left = Math.min(currentRect.startX, currentRect.startX + currentRect.width);
+                    const top = Math.min(currentRect.startY, currentRect.startY + currentRect.height);
+                    const width = Math.abs(currentRect.width);
+                    const height = Math.abs(currentRect.height);
+
+                    drawingRect.style.left = left + 'px';
+                    drawingRect.style.top = top + 'px';
+                    drawingRect.style.width = width + 'px';
+                    drawingRect.style.height = height + 'px';
+                }
+            };
+
+            // Efecto para renderizar cuando el PDF esté listo
+            useEffect(() => {
+                if (pdfDoc && canvasContainerRef.current && !loading) {
+                    console.log('🔄 PDF y contenedor listos, iniciando renderizado automático...');
+                    setDebugInfo('Contenedor listo, renderizando todas las páginas...');
+                    
+                    setTimeout(() => {
+                        renderAllPages(pdfDoc);
+                    }, 500);
+                    
+                    // Fallback adicional
+                    setTimeout(() => {
+                        if (renderFailed || debugInfo.includes('esperando')) {
+                            console.log('🔄 Segundo intento automático de renderizado...');
+                            renderAllPages(pdfDoc);
+                        }
+                    }, 2000);
+                }
+            }, [pdfDoc, loading]);
+
+            // Redibujar cuando cambian los comentarios o hover
+            useEffect(() => {
+                if (renderedPages.length > 0) {
+                    drawCommentRectangles();
+                }
+            }, [comments, hoveredComment, renderedPages]);
+
+            // Manejar selección de área (limpio)
+            const handleMouseDown = (e, pageNumber) => {
+                if (isDrawing) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const overlay = e.currentTarget;
+                const rect = overlay.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                // Crear rectángulo de dibujo inmediatamente
+                const drawingRect = document.createElement('div');
+                drawingRect.className = 'drawing-rect-temp';
+                drawingRect.style.cssText = `
+                    position: absolute;
+                    border: 2px dashed blue;
+                    background: rgba(0, 0, 255, 0.1);
+                    pointer-events: none;
+                    z-index: 999;
+                    left: ${x}px;
+                    top: ${y}px;
+                    width: 0px;
+                    height: 0px;
+                `;
+                overlay.appendChild(drawingRect);
+
+                setIsDrawing(true);
+                setCurrentRect({ 
+                    x, 
+                    y, 
+                    width: 0, 
+                    height: 0, 
+                    page: pageNumber,
+                    startX: x,
+                    startY: y,
+                    overlay: overlay,
+                    drawingElement: drawingRect
+                });
+
+                // Event listeners globales
+                const handleGlobalMouseMove = (e) => {
+                    const rect = overlay.getBoundingClientRect();
+                    const currentX = e.clientX - rect.left;
+                    const currentY = e.clientY - rect.top;
+
+                    const newWidth = currentX - x;
+                    const newHeight = currentY - y;
+
+                    // Actualizar rectángulo visual inmediatamente
+                    const left = Math.min(x, currentX);
+                    const top = Math.min(y, currentY);
+                    const width = Math.abs(newWidth);
+                    const height = Math.abs(newHeight);
+
+                    drawingRect.style.left = left + 'px';
+                    drawingRect.style.top = top + 'px';
+                    drawingRect.style.width = width + 'px';
+                    drawingRect.style.height = height + 'px';
+
+                    setCurrentRect(prev => ({
+                        ...prev,
+                        width: newWidth,
+                        height: newHeight
+                    }));
+                };
+
+                const handleGlobalMouseUp = (e) => {
+                    document.removeEventListener('mousemove', handleGlobalMouseMove);
+                    document.removeEventListener('mouseup', handleGlobalMouseUp);
+                    
+                    // Limpiar rectángulo temporal
+                    drawingRect.remove();
+                    
+                    setIsDrawing(false);
+
+                    // Usar el currentRect actual
+                    setCurrentRect(current => {
+                        if (!current) return null;
+
+                        if (Math.abs(current.width) > 10 && Math.abs(current.height) > 10) {
+                            const normalizedRect = {
+                                x: Math.min(current.startX, current.startX + current.width),
+                                y: Math.min(current.startY, current.startY + current.height),
+                                width: Math.abs(current.width),
+                                height: Math.abs(current.height),
+                                page: current.page
+                            };
+
+                            setPendingRect(normalizedRect);
+                            setShowCommentDialog(true);
+                        }
+
+                        return null;
+                    });
+                };
+
+                document.addEventListener('mousemove', handleGlobalMouseMove);
+                document.addEventListener('mouseup', handleGlobalMouseUp);
+            };
+
+            // Función de test para crear overlays manualmente
+            const testOverlays = () => {
+                console.log('🧪 INICIANDO TEST DE OVERLAYS');
+                const container = canvasContainerRef.current;
+                if (!container) {
+                    console.log('❌ No se encontró el contenedor');
+                    return;
+                }
+
+                const pages = container.querySelectorAll('.page-container');
+                console.log('📄 Páginas encontradas:', pages.length);
+
+                pages.forEach((page, index) => {
+                    // Crear overlay de test
+                    const testOverlay = document.createElement('div');
+                    testOverlay.style.cssText = `
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background: rgba(0, 255, 0, 0.3);
+                        border: 3px solid green;
+                        z-index: 999;
+                        pointer-events: auto;
+                        cursor: crosshair;
+                    `;
+                    testOverlay.innerHTML = `<div style="padding: 10px; background: white; margin: 10px;">TEST OVERLAY ${index + 1}</div>`;
+                    
+                    testOverlay.addEventListener('click', () => {
+                        alert(`Test overlay ${index + 1} funciona!`);
+                    });
+
+                    page.appendChild(testOverlay);
+                    console.log('✅ Test overlay agregado a página', index + 1);
+                });
+            };
+            const scrollToComment = (comment) => {
+                if (!comment.page || !renderedPages.length) return;
+                
+                const pageData = renderedPages.find(p => p.pageNumber === comment.page);
+                if (!pageData) return;
+
+                // Calcular la posición del comentario dentro de la página
+                const commentY = pageData.container.offsetTop + comment.rect.y;
+                const container = canvasContainerRef.current?.parentElement;
+                
+                if (container) {
+                    // Hacer scroll suave hacia el comentario
+                    container.scrollTo({
+                        top: commentY - 100, // Offset para que se vea mejor
+                        behavior: 'smooth'
+                    });
+                }
+            };
+            const addComment = async () => {
+                if (!newComment.trim() || !pendingRect || !project) return;
+
+                try {
+                    const colors = ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#F44336'];
+                    
+                    const response = await fetch(`/api/projects/${project.uuid}/comments`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            text: newComment,
+                            rect: pendingRect,
+                            color: colors[comments.length % colors.length],
+                            page: pendingRect.page || 1
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        await loadComments(project.uuid);
+                        setNewComment('');
+                        setShowCommentDialog(false);
+                        setPendingRect(null);
+                    } else {
+                        setError(data.error);
+                    }
+                } catch (err) {
+                    console.error('Error agregando comentario:', err);
+                    setError('Error al agregar comentario');
+                }
+            };
+
+            // Editar comentario
+            const startEditComment = (index) => {
+                setEditingComment(index);
+                setEditCommentText(comments[index].text);
+            };
+
+            const saveEditComment = async () => {
+                if (!editCommentText.trim() || editingComment === null) return;
+
+                try {
+                    const commentId = comments[editingComment].id;
+                    
+                    const response = await fetch(`/api/comments/${commentId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            text: editCommentText
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        await loadComments(project.uuid);
+                        setEditingComment(null);
+                        setEditCommentText('');
+                    } else {
+                        setError(data.error);
+                    }
+                } catch (err) {
+                    console.error('Error editando comentario:', err);
+                    setError('Error al editar comentario');
+                }
+            };
+
+            const cancelEditComment = () => {
+                setEditingComment(null);
+                setEditCommentText('');
+            };
+
+            // Eliminar comentario
+            const deleteComment = async (index) => {
+                try {
+                    const commentId = comments[index].id;
+                    
+                    const response = await fetch(`/api/comments/${commentId}`, {
+                        method: 'DELETE'
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        await loadComments(project.uuid);
+                    } else {
+                        setError(data.error);
+                    }
+                } catch (err) {
+                    console.error('Error eliminando comentario:', err);
+                    setError('Error al eliminar comentario');
+                }
+            };
+
+            // Exportar comentarios
+            const exportComments = () => {
+                const data = {
+                    project: project.name,
+                    totalPages: totalPages,
+                    comments: comments.map((c, index) => ({
+                        numero: index + 1,
+                        texto: c.text,
+                        pagina: c.page || 1,
+                        area: c.rect,
+                        color: c.color,
+                        fecha: c.created_at
+                    })),
+                    exportDate: new Date().toISOString(),
+                    summary: {
+                        totalComments: comments.length,
+                        commentsByPage: {}
+                    }
+                };
+
+                // Resumen de comentarios por página
+                comments.forEach(comment => {
+                    const page = comment.page || 1;
+                    data.summary.commentsByPage[page] = (data.summary.commentsByPage[page] || 0) + 1;
+                });
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `comentarios-${project.name}-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+            };
+
+            if (loading) {
+                return (
+                    <div className="h-screen flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                            <p className="text-gray-600">Cargando proyecto...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="h-screen flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="text-red-500 text-6xl mb-4">⚠️</div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-2">Error</h2>
+                            <p className="text-gray-600">{error}</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen bg-gray-100">
+                    {/* Panel Izquierdo - Visor PDF */}
+                    <div className="flex-1 bg-white border-r border-gray-300 flex flex-col">
+                        <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
+                            <div>
+                                <h1 className="text-lg font-semibold">{project?.name}</h1>
+                                <p className="text-sm text-gray-300">{project?.pdf_original_name}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={exportComments}
+                                    className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm flex items-center gap-1"
+                                >
+                                    <Download size={16} />
+                                    Exportar comentarios
+                                </button>
+                                {pdfDoc && (
+                                    <button 
+                                        onClick={() => {
+                                            setRenderFailed(false);
+                                            renderAllPages(pdfDoc);
+                                        }}
+                                        className={`px-3 py-1 rounded text-sm ${
+                                            renderFailed 
+                                                ? 'bg-orange-600 hover:bg-orange-700 animate-pulse' 
+                                                : 'bg-blue-600 hover:bg-blue-700'
+                                        }`}
+                                        disabled={isRendering}
+                                    >
+                                        {renderFailed ? '⚠️ Re-renderizar PDF' : '🔄 Re-renderizar'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Área de visualización con scroll */}
+                        <div className="flex-1 overflow-auto bg-gray-100 p-4">
+                            {/* Indicador de carga */}
+                            {isRendering && (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="flex items-center gap-3 text-blue-600">
+                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                                        <span>Cargando páginas del PDF...</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Contenedor de todas las páginas */}
+                            <div 
+                                ref={canvasContainerRef}
+                                className="flex flex-col items-center gap-4 max-w-full"
+                                style={{ minHeight: isRendering ? '200px' : 'auto' }}
+                            >
+                                {/* Las páginas se insertan aquí dinámicamente */}
+                            </div>
+
+                            {/* Mensaje si el renderizado falla */}
+                            {pdfDoc && renderFailed && !isRendering && (
+                                <div className="flex items-center justify-center py-12">
+                                    <div className="text-center p-6 bg-yellow-50 border-2 border-yellow-300 border-dashed rounded-lg">
+                                        <div className="text-yellow-600 text-3xl mb-3">⚠️</div>
+                                        <div className="text-yellow-800 font-medium text-lg mb-2">PDF cargado pero no visible</div>
+                                        <div className="text-yellow-700 mb-3">Haz clic en "Re-renderizar PDF" arriba</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="bg-gray-50 p-3 border-t text-sm text-gray-600">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <span>📝 <strong>Crear comentario:</strong> Clic y arrastra sobre el PDF para seleccionar un área</span>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                    {pdfDoc && `${totalPages} página${totalPages !== 1 ? 's' : ''}`}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Panel Derecho - Chat de Comentarios */}
+                    <div className="w-96 bg-gray-50 flex flex-col">
+                        <div className="bg-purple-600 text-white p-4">
+                            <h2 className="text-lg font-semibold flex items-center gap-2">
+                                <MessageCircle size={20} />
+                                Comentarios del Cliente
+                            </h2>
+                            <p className="text-purple-100 text-sm">
+                                {comments.length} comentario{comments.length !== 1 ? 's' : ''}
+                            </p>
+                        </div>
+
+                        {/* Lista de Comentarios */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {comments.length === 0 ? (
+                                <div className="text-center text-gray-500 mt-8">
+                                    <MessageCircle size={48} className="mx-auto mb-4 text-gray-300" />
+                                    <p>No hay comentarios aún</p>
+                                    <p className="text-sm">Selecciona un área en el PDF para agregar uno</p>
+                                </div>
+                            ) : (
+                                comments.map((comment, index) => (
+                                    <div
+                                        key={comment.id}
+                                        className={`bg-white rounded-lg p-3 shadow-sm border-l-4 transition-all duration-200 cursor-pointer ${
+                                            hoveredComment === index ? 'shadow-md scale-105' : ''
+                                        }`}
+                                        style={{ borderLeftColor: comment.color }}
+                                        onMouseEnter={() => setHoveredComment(index)}
+                                        onMouseLeave={() => setHoveredComment(null)}
+                                        onClick={() => scrollToComment(comment)}
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span 
+                                                    className="inline-block w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold"
+                                                    style={{ backgroundColor: comment.color }}
+                                                >
+                                                    {index + 1}
+                                                </span>
+                                                {comment.page && totalPages > 1 && (
+                                                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                                        Pág. {comment.page}
+                                                        <span className="ml-1 text-blue-600">👆 Clic para ir</span>
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        startEditComment(index);
+                                                    }}
+                                                    className="text-blue-500 hover:text-blue-700 transition-colors"
+                                                >
+                                                    <Edit3 size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        deleteComment(index);
+                                                    }}
+                                                    className="text-red-500 hover:text-red-700 transition-colors"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {editingComment === index ? (
+                                            <div className="space-y-2">
+                                                <textarea
+                                                    value={editCommentText}
+                                                    onChange={(e) => setEditCommentText(e.target.value)}
+                                                    className="w-full h-20 p-2 border border-gray-300 rounded text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    autoFocus
+                                                />
+                                                <div className="flex gap-2 justify-end">
+                                                    <button
+                                                        onClick={cancelEditComment}
+                                                        className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800 transition-colors"
+                                                    >
+                                                        Cancelar
+                                                    </button>
+                                                    <button
+                                                        onClick={saveEditComment}
+                                                        disabled={!editCommentText.trim()}
+                                                        className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    >
+                                                        Guardar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <p className="text-gray-800 mb-2">{comment.text}</p>
+                                                <div className="text-xs text-gray-500">{comment.timestamp}</div>
+                                            </>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Dialog para Agregar Comentario */}
+                    {showCommentDialog && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-semibold">Agregar Comentario</h3>
+                                    {totalPages > 1 && pendingRect?.page && (
+                                        <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                            Página {pendingRect.page}
+                                        </span>
+                                    )}
+                                </div>
+                                <textarea
+                                    value={newComment}
+                                    onChange={(e) => setNewComment(e.target.value)}
+                                    placeholder="Escribe tu comentario aquí..."
+                                    className="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    autoFocus
+                                />
+                                <div className="flex justify-end gap-3 mt-4">
+                                    <button
+                                        onClick={() => {
+                                            setShowCommentDialog(false);
+                                            setPendingRect(null);
+                                            setNewComment('');
+                                        }}
+                                        className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={addComment}
+                                        disabled={!newComment.trim()}
+                                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Agregar Comentario
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Renderizar la aplicación
+        ReactDOM.render(<PDFCommentApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
